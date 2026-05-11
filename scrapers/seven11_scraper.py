@@ -1,34 +1,29 @@
-"""7-11 相關新聞爬蟲（改抓新聞媒體，不直連官網）"""
-import sqlite3, requests, feedparser, hashlib
+"""7-11 IP 相關新聞爬蟲（Google News RSS + Yahoo News RSS）"""
+import sqlite3, feedparser, hashlib
 from bs4 import BeautifulSoup
 from datetime import datetime
 import sys, os
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36",
-    "Accept-Language": "zh-TW,zh;q=0.9",
-}
-
-# 公開可抓的 7-11 / 超商相關新聞來源
+# Google News RSS 台灣版（從任何 IP 都能抓到台灣中文新聞）
 NEWS_SOURCES = [
-    # Yahoo 新聞搜尋 RSS（7-11 聯名）
-    "https://tw.news.yahoo.com/rss/search?p=7-11+IP+聯名&lang=zh-TW&region=TW",
-    # Yahoo 新聞搜尋 RSS（統一超商加價購）
-    "https://tw.news.yahoo.com/rss/search?p=統一超商+加價購&lang=zh-TW&region=TW",
-    # Yahoo 新聞搜尋 RSS（7-11 快閃）
-    "https://tw.news.yahoo.com/rss/search?p=7-11+快閃&lang=zh-TW&region=TW",
+    {
+        "name": "Google News｜7-11聯名",
+        "url": "https://news.google.com/rss/search?q=7-11+聯名+台灣&hl=zh-TW&gl=TW&ceid=TW:zh-Hant",
+    },
+    {
+        "name": "Google News｜7-11加價購",
+        "url": "https://news.google.com/rss/search?q=7-11+加價購&hl=zh-TW&gl=TW&ceid=TW:zh-Hant",
+    },
+    {
+        "name": "Google News｜統一超商IP",
+        "url": "https://news.google.com/rss/search?q=統一超商+IP+授權&hl=zh-TW&gl=TW&ceid=TW:zh-Hant",
+    },
+    {
+        "name": "Google News｜7-11快閃",
+        "url": "https://news.google.com/rss/search?q=7-11+快閃+限定&hl=zh-TW&gl=TW&ceid=TW:zh-Hant",
+    },
 ]
-
-KEYWORDS_CHECK = ["7-11", "711", "7-ELEVEN", "統一超商", "小七"]
-IP_KEYWORDS    = ["IP", "聯名", "授權", "加價購", "快閃", "限定", "公仔", "周邊"]
-
-
-def is_relevant(title: str, summary: str = "") -> bool:
-    text = (title + " " + summary).upper()
-    has_711 = any(k.upper() in text for k in KEYWORDS_CHECK)
-    has_ip  = any(k.upper() in text for k in IP_KEYWORDS)
-    return has_711 or has_ip   # 新聞來源已過濾，有一個符合即可
 
 
 def run(conn: sqlite3.Connection):
@@ -39,37 +34,44 @@ def run(conn: sqlite3.Connection):
             url        TEXT,
             summary    TEXT,
             source     TEXT,
+            published  TEXT,
             fetched_at TEXT
         )
     """)
     conn.commit()
 
     added = 0
-    print("  7-11 相關新聞 ...")
+    print("  7-11 新聞（Google News RSS）...")
 
-    for rss_url in NEWS_SOURCES:
+    for src in NEWS_SOURCES:
         try:
-            feed = feedparser.parse(rss_url)
+            feed = feedparser.parse(src["url"])
             for entry in feed.entries:
                 title   = entry.get("title", "")
                 url     = entry.get("link", "")
-                summary = BeautifulSoup(entry.get("summary", ""), "html.parser").get_text()[:200]
-
-                if not is_relevant(title, summary):
-                    continue
+                summary = BeautifulSoup(
+                    entry.get("summary", ""), "html.parser"
+                ).get_text()[:300]
+                pub     = entry.get("published", "")[:10]
 
                 item_id = hashlib.md5(url.encode()).hexdigest()
-                exists  = conn.execute("SELECT 1 FROM seven11 WHERE item_id=?", (item_id,)).fetchone()
+                exists  = conn.execute(
+                    "SELECT 1 FROM seven11 WHERE item_id=?", (item_id,)
+                ).fetchone()
+
                 if not exists:
-                    source = feed.feed.get("title", rss_url[:40])
                     conn.execute(
-                        "INSERT INTO seven11 VALUES (?,?,?,?,?,?)",
-                        (item_id, title, url, summary, source, datetime.utcnow().isoformat()),
+                        "INSERT INTO seven11 VALUES (?,?,?,?,?,?,?)",
+                        (item_id, title, url, summary, src["name"],
+                         pub, datetime.utcnow().isoformat()),
                     )
                     conn.commit()
                     added += 1
-        except Exception as e:
-            print(f"    ⚠️  {rss_url[:50]} 失敗：{e}")
 
-    print(f"    ✅ 新增 {added} 則新聞")
+            print(f"    {src['name']}：{len(feed.entries)} 則")
+
+        except Exception as e:
+            print(f"    ⚠️  {src['name']} 失敗：{e}")
+
+    print(f"    ✅ 共新增 {added} 則新聞")
     return added
