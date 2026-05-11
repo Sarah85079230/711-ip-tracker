@@ -6,8 +6,8 @@ IP_KEYWORDS  = ["IP", "聯名", "授權", "加價購", "快閃", "限定", "公�
 
 # Google Alerts RSS 網址（設定好後貼入）
 GOOGLE_ALERTS_RSS = [
-    # 範例格式：
-    # "https://www.google.com/alerts/feeds/xxxxx/yyyyy",
+    "https://www.google.com/alerts/feeds/18134203045076373295/11661425824503935040",
+    # 之後可以再加更多 RSS 網址，每個關鍵字一行
 ]
 
 # PTT 監控版面
