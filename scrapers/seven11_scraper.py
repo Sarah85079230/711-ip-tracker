@@ -27,6 +27,12 @@ NEWS_SOURCES = [
 
 
 def run(conn: sqlite3.Connection):
+    # 若舊版資料表欄位不足，先刪除重建
+    try:
+        conn.execute("SELECT published FROM seven11 LIMIT 1")
+    except Exception:
+        conn.execute("DROP TABLE IF EXISTS seven11")
+
     conn.execute("""
         CREATE TABLE IF NOT EXISTS seven11 (
             item_id    TEXT PRIMARY KEY,
