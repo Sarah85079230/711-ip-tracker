@@ -1,0 +1,36 @@
+name: 每日自動抓取情報
+
+on:
+  schedule:
+    - cron: '0 2 * * *'   # 台灣時間早上 10:00（UTC+8，所以 UTC 02:00）
+  workflow_dispatch:        # 也可以手動在 GitHub 上點按鈕觸發
+
+permissions:
+  contents: write           # 允許 Actions 把更新後的資料庫 commit 回 repo
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 取得程式碼
+        uses: actions/checkout@v4
+
+      - name: 設定 Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 安裝套件
+        run: pip install -r requirements.txt
+
+      - name: 執行爬蟲
+        run: python run_all.py
+
+      - name: 把更新後的資料庫存回 GitHub
+        run: |
+          git config --global user.name  "GitHub Actions Bot"
+          git config --global user.email "actions@github.com"
+          git add data.db
+          git diff --staged --quiet || git commit -m "⏰ 自動更新資料 $(TZ='Asia/Taipei' date '+%Y-%m-%d %H:%M')"
+          git push
