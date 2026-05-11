@@ -87,8 +87,9 @@ if not data["seven11"].empty:
     df = data["seven11"].copy()
     df["fetched_at"] = pd.to_datetime(df["fetched_at"]).dt.strftime("%Y-%m-%d")
     df["連結"] = df["url"].apply(lambda u: f'<a href="{u}" target="_blank">查看</a>')
-    show = df[["fetched_at", "title", "連結"]].head(30)
-    show.columns = ["發現日期", "活動名稱", "連結"]
+    cols = [c for c in ["fetched_at", "source", "title", "連結"] if c in df.columns]
+    show = df[cols].head(30)
+    show.columns = ["發現日期", "來源", "標題", "連結"][:len(cols)]
     st.write(show.to_html(escape=False, index=False), unsafe_allow_html=True)
 else:
     st.info("尚無 7-11 官網資料")

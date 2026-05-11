@@ -1,13 +1,29 @@
 """PTT 超商板 爬蟲"""
-import sqlite3, requests, time
-from bs4 import BeautifulSoup
-from datetime import datetime
+import sqlite3, time
 import sys, os
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from config import PTT_BOARDS, KEYWORDS_711, IP_KEYWORDS, MAX_POSTS, DB_PATH
 
+try:
+    import requests
+    from bs4 import BeautifulSoup
+except ImportError:
+    pass
+
 BASE_URL = "https://www.ptt.cc"
-HEADERS  = {"User-Agent": "Mozilla/5.0", "Cookie": "over18=1"}
+
+
+def make_session():
+    s = requests.Session()
+    s.cookies.set("over18", "1", domain="www.ptt.cc")
+    s.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8",
+        "Referer": "https://www.ptt.cc/bbs/c_store/index.html",
+        "Connection": "keep-alive",
+    })
+    return s
 
 
 def is_relevant(title: str) -> bool:
@@ -18,15 +34,30 @@ def is_relevant(title: str) -> bool:
 
 
 def scrape_board(board: str, conn: sqlite3.Connection) -> int:
-    added = 0
-    url   = f"{BASE_URL}/bbs/{board}/index.html"
+    added   = 0
+    session = make_session()
+    url     = f"{BASE_URL}/bbs/{board}/index.html"
 
-    for _ in range(5):   # 最多抓 5 頁
+    for attempt in range(3):   # 最多 3 次重試
         try:
-            r = requests.get(url, headers=HEADERS, timeout=10)
+            r = session.get(url, timeout=15)
+            if r.status_code != 200:
+                print(f"    PTT 回應 {r.status_code}，重試...")
+                time.sleep(3)
+                continue
+            break
+        except Exception as e:
+            print(f"    PTT 連線失敗（第{attempt+1}次）：{e}")
+            time.sleep(5)
+    else:
+        return 0
+
+    for page_num in range(5):
+        try:
+            r = session.get(url, timeout=15)
             soup = BeautifulSoup(r.text, "html.parser")
         except Exception as e:
-            print(f"    PTT 連線失敗：{e}")
+            print(f"    PTT 第{page_num+1}頁失敗：{e}")
             break
 
         for div in soup.select("div.r-ent"):
@@ -40,15 +71,13 @@ def scrape_board(board: str, conn: sqlite3.Connection) -> int:
             if not is_relevant(title):
                 continue
 
-            # 取得推文數
             push_el = div.select_one("div.nrec span")
             pushes  = push_el.text.strip() if push_el else "0"
             pushes  = 100 if pushes == "爆" else (0 if not pushes.lstrip("-").isdigit() else int(pushes))
-
-            # 取得日期
             date_el = div.select_one("div.date")
             date_str = date_el.text.strip() if date_el else ""
 
+            from datetime import datetime
             exists = conn.execute("SELECT 1 FROM ptt WHERE post_id=?", (post_id,)).fetchone()
             if not exists:
                 conn.execute(
@@ -61,12 +90,11 @@ def scrape_board(board: str, conn: sqlite3.Connection) -> int:
             if added >= MAX_POSTS:
                 return added
 
-        # 前一頁
-        prev = soup.select_one("a.btn.wide", string=lambda t: t and "上頁" in t)
+        prev = soup.find("a", string=lambda t: t and "上頁" in t)
         if not prev:
             break
         url = BASE_URL + prev["href"]
-        time.sleep(1)
+        time.sleep(2)
 
     return added
 
